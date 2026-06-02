@@ -1553,7 +1553,7 @@ Best for curated reference databases.
         "Maximum ΔδH / ppm",
         min_value=0.05,
         max_value=15.0,
-        value=10,
+        value=10.0,
         step=0.05,
     )
 

@@ -1412,6 +1412,13 @@ try:
 except FileNotFoundError:
     st.sidebar.warning("Logo not found at static/LAABio.png")
 
+LOGO_PATH2 = STATIC_DIR / "Logo_NMRShazam.png"
+try:
+    logo = Image.open(LOGO_PATH2)  # raises if missing
+    st.sidebar.image(logo, use_container_width=True)
+except FileNotFoundError:
+    st.sidebar.warning("Logo not found at static/Logo_NMRShazam.png")
+
 st.markdown("by Ricardo M Borges (IPPN-UFRJ)")
  
 

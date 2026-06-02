@@ -687,33 +687,78 @@ def score_unknown_against_library(
     rarity_weights: pd.DataFrame,
     params: ProtonHashParameters,
 ) -> pd.DataFrame:
-    """Score an unknown 1H NMR peak list against the reference database."""
+    """Score unknown using hash match + absolute δH agreement."""
     unknown_hashes = generate_hashes_for_proton_spectrum(unknown_peaks, params)
 
     if unknown_hashes.empty or library_hashes.empty:
         return pd.DataFrame()
 
-    unknown_unique = unknown_hashes[["hash_value"]].drop_duplicates()
-
-    hits = unknown_unique.merge(
-        library_hashes[["compound_id", "compound_name", "SMILES", "INCHI_KEY", "GENERIC_NAME", "hash_value"]].drop_duplicates(),
+    hits = unknown_hashes.merge(
+        library_hashes,
         on="hash_value",
         how="inner",
+        suffixes=("_unknown", "_reference"),
     )
 
     if hits.empty:
         return pd.DataFrame()
 
+    tol = float(params.match_shift_tolerance)
+
+    direct_match = (
+        (hits["anchor_delta_H_unknown"] - hits["anchor_delta_H_reference"]).abs() <= tol
+    ) & (
+        (hits["target_delta_H_unknown"] - hits["target_delta_H_reference"]).abs() <= tol
+    )
+
+    swapped_match = (
+        (hits["anchor_delta_H_unknown"] - hits["target_delta_H_reference"]).abs() <= tol
+    ) & (
+        (hits["target_delta_H_unknown"] - hits["anchor_delta_H_reference"]).abs() <= tol
+    )
+
+    hits = hits[direct_match | swapped_match].copy()
+
+    if hits.empty:
+        return pd.DataFrame()
+
+    hits = hits.drop_duplicates(
+        subset=[
+            "compound_id_reference",
+            "hash_value",
+            "anchor_delta_H_reference",
+            "target_delta_H_reference",
+        ]
+    )
+
     hits = hits.merge(rarity_weights, on="hash_value", how="left")
     hits["rarity_weight"] = hits["rarity_weight"].fillna(1.0)
 
     scores = (
-        hits.groupby(["compound_id", "compound_name", "SMILES", "INCHI_KEY", "GENERIC_NAME"], dropna=False)
+        hits.groupby(
+            [
+                "compound_id_reference",
+                "compound_name_reference",
+                "SMILES_reference",
+                "INCHI_KEY_reference",
+                "GENERIC_NAME_reference",
+            ],
+            dropna=False,
+        )
         .agg(
             matched_hashes=("hash_value", "nunique"),
             weighted_matched_score=("rarity_weight", "sum"),
         )
         .reset_index()
+        .rename(
+            columns={
+                "compound_id_reference": "compound_id",
+                "compound_name_reference": "compound_name",
+                "SMILES_reference": "SMILES",
+                "INCHI_KEY_reference": "INCHI_KEY",
+                "GENERIC_NAME_reference": "GENERIC_NAME",
+            }
+        )
     )
 
     scores = scores.merge(reference_hash_counts, on=["compound_id", "compound_name"], how="left")
@@ -726,7 +771,6 @@ def score_unknown_against_library(
     ).reset_index(drop=True)
 
     return scores
-
 
 # ============================================================
 # Visualization
@@ -1367,13 +1411,6 @@ try:
     st.sidebar.image(logo, use_container_width=True)
 except FileNotFoundError:
     st.sidebar.warning("Logo not found at static/LAABio.png")
-    
-LOGO_PATH2 = STATIC_DIR / "Logo_NMRShazam.png"
-try:
-    logo2 = Image.open(LOGO_PATH2)  # raises if missing
-    st.sidebar.image(logo2, use_container_width=True)
-except FileNotFoundError:
-    st.sidebar.warning("Logo not found at static/Logo_NMRShazam.png")
 
 st.markdown("by Ricardo M Borges (IPPN-UFRJ)")
  
@@ -1516,7 +1553,7 @@ Best for curated reference databases.
         "Maximum ΔδH / ppm",
         min_value=0.05,
         max_value=15.0,
-        value=1.5,
+        value=10,
         step=0.05,
     )
 
@@ -1524,7 +1561,7 @@ Best for curated reference databases.
         "Maximum neighbors per peak",
         min_value=2,
         max_value=200,
-        value=5,
+        value=50,
         step=1,
     )
 
@@ -1532,9 +1569,8 @@ Best for curated reference databases.
         "Remove weakest peaks by intensity quantile",
         min_value=0.0,
         max_value=0.9,
-        value=0.35,
+        value=0.0,
         step=0.05,
-        help="Example: 0.20 removes the weakest 20% of peaks within each compound.",
     )
     
     min_relative_intensity = st.slider(
@@ -2033,7 +2069,7 @@ with tab_search:
                         "Maximum matched relationships to load",
                         min_value=10,
                         max_value=1000,
-                        value=5,
+                        value=100,
                         step=10,
                         key="max_plot_links_selected_hit",
                     )

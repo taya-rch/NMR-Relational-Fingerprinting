@@ -59,8 +59,8 @@ st.set_page_config(
 # ============================================================
 # Data model
 # ============================================================
-target_columns = {"delta_H", "delta_C"}
-REQUIRED_COLUMNS = list(target_columns.intersection(available_columns))
+
+REQUIRED_COLUMNS = ["delta_H"]
 OPTIONAL_COLUMNS = [
     "compound_id",
     "compound_name",
